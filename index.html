@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Animation Frame Viewer</title>
+<style>
+  body { font-family: sans-serif; background: #111; color: #eee; margin: 2em; }
+  .section { border: 1px solid #444; padding: 1em; margin-bottom: 2em; border-radius: 10px; background: #222; }
+  .title { font-size: 1.4em; margin-bottom: 0.5em; }
+  .description { font-size: 1em; margin-bottom: 1em; color: #ccc; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5em; }
+  .canvas-container { position: relative; background: #000; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; }
+  .controls { display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap; margin-top: 0.5em; }
+  .button { background: #444; color: white; border: none; padding: 0.4em 0.8em; border-radius: 5px; cursor: pointer; }
+  .button:hover { background: #666; }
+  .icon { font-weight: bold; font-size: 1.2em; cursor: pointer; }
+  .add-section { font-size: 2em; text-align: center; cursor: pointer; color: #0f0; }
+</style>
+</head>
+<body>
+
+<h1>Character Animation Viewer</h1>
+
+<div id="sections"></div>
+
+<div class="add-section" id="addSection">＋ Add Animation Section</div>
+
+<script>
+class AnimationSection {
+  constructor(container, title = "", description = "", frameSources = {}) {
+    this.container = container;
+    this.title = title;
+    this.description = description;
+    this.frameSources = frameSources; // {front:[], side:[], back:[], threeq:[]}
+    this.currentFrame = 0;
+    this.playing = {front:false, side:false, back:false, threeq:false};
+    this.framerate = 12;
+    this.loop = true;
+    this.intervalIDs = {};
+    this.render();
+  }
+
+  render() {
+    const section = document.createElement("div");
+    section.className = "section";
+
+    if (this.title) {
+      const titleEl = document.createElement("div");
+      titleEl.className = "title";
+      titleEl.textContent = this.title;
+      section.appendChild(titleEl);
+    }
+    if (this.description) {
+      const descEl = document.createElement("div");
+      descEl.className = "description";
+      descEl.textContent = this.description;
+      section.appendChild(descEl);
+    }
+
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    section.appendChild(grid);
+
+    const angles = ["front", "side", "back", "threeq"];
+    angles.forEach(angle => {
+      const div = document.createElement("div");
+      div.className = "canvas-container";
+
+      const img = document.createElement("img");
+      img.style.maxWidth = "100%";
+      img.style.maxHeight = "100%";
+      div.appendChild(img);
+
+      grid.appendChild(div);
+
+      const controls = document.createElement("div");
+      controls.className = "controls";
+      controls.innerHTML = `
+        <button class="button" id="play_${angle}">Play</button>
+        <button class="button" id="pause_${angle}">Pause</button>
+        <button class="button" id="prev_${angle}">◀ Frame</button>
+        <button class="button" id="next_${angle}">Frame ▶</button>
+      `;
+      section.appendChild(controls);
+
+      // Event listeners
+      controls.querySelector(`#play_${angle}`).addEventListener("click", () => this.play(angle, img));
+      controls.querySelector(`#pause_${angle}`).addEventListener("click", () => this.pause(angle));
+      controls.querySelector(`#prev_${angle}`).addEventListener("click", () => this.frameChange(angle, -1, img));
+      controls.querySelector(`#next_${angle}`).addEventListener("click", () => this.frameChange(angle, 1, img));
+
+      // Initialize image
+      if (this.frameSources[angle] && this.frameSources[angle].length)
+        img.src = this.frameSources[angle][0];
+    });
+
+    // Global controls
+    const global = document.createElement("div");
+    global.className = "controls";
+    global.innerHTML = `
+      <label>Framerate: <input type="number" id="framerate" value="${this.framerate}" min="1" style="width:60px"></label>
+      <label><input type="checkbox" id="loop" ${this.loop ? "checked" : ""}> Loop</label>
+      <button class="button" id="playAll">Play All</button>
+      <span class="icon" id="gear">⚙️</span>
+    `;
+    section.appendChild(global);
+
+    global.querySelector("#framerate").addEventListener("change", e => {
+      this.framerate = parseInt(e.target.value);
+    });
+    global.querySelector("#loop").addEventListener("change", e => {
+      this.loop = e.target.checked;
+    });
+    global.querySelector("#playAll").addEventListener("click", () => this.playAll(section));
+    global.querySelector("#gear").addEventListener("click", () => alert("Edit mode coming soon!"));
+
+    this.container.appendChild(section);
+  }
+
+  play(angle, img) {
+    if (!this.frameSources[angle] || this.frameSources[angle].length === 0) return;
+    this.pause(angle);
+    this.playing[angle] = true;
+    const playLoop = () => {
+      if (!this.playing[angle]) return;
+      img.src = this.frameSources[angle][this.currentFrame];
+      this.currentFrame++;
+      if (this.currentFrame >= this.frameSources[angle].length) {
+        if (this.loop) this.currentFrame = 0;
+        else { this.pause(angle); this.currentFrame = 0; }
+      }
+      this.intervalIDs[angle] = setTimeout(playLoop, 1000 / this.framerate);
+    };
+    playLoop();
+  }
+
+  pause(angle) {
+    this.playing[angle] = false;
+    clearTimeout(this.intervalIDs[angle]);
+  }
+
+  frameChange(angle, delta, img) {
+    if (!this.frameSources[angle] || this.frameSources[angle].length === 0) return;
+    this.currentFrame = (this.currentFrame + delta + this.frameSources[angle].length) % this.frameSources[angle].length;
+    img.src = this.frameSources[angle][this.currentFrame];
+  }
+
+  playAll(section) {
+    const imgs = section.querySelectorAll("img");
+    this.currentFrame = 0;
+    ["front", "side", "back", "threeq"].forEach((angle, i) => this.play(angle, imgs[i]));
+  }
+}
+
+const container = document.getElementById("sections");
+const addButton = document.getElementById("addSection");
+
+addButton.addEventListener("click", () => {
+  new AnimationSection(container, "New Animation", "Description", {
+    front: [],
+    side: [],
+    back: [],
+    threeq: []
+  });
+});
+
+// Example section
+new AnimationSection(container, "Idle Animation", "Example description", {
+  front: [
+    "https://raw.githubusercontent.com/SeanGitUser/CharacterFrames/main/idle/front/frame_0001.png",
+    "https://raw.githubusercontent.com/SeanGitUser/CharacterFrames/main/idle/front/frame_0002.png"
+  ],
+  side: [],
+  back: [],
+  threeq: []
+});
+</script>
+</body>
+</html>
