@@ -5,17 +5,175 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Animation Frame Viewer</title>
 <style>
-  body { font-family: sans-serif; background: #111; color: #eee; margin: 2em; }
-  .section { border: 1px solid #444; padding: 1em; margin-bottom: 2em; border-radius: 10px; background: #222; }
-  .title { font-size: 1.4em; margin-bottom: 0.5em; }
-  .description { font-size: 1em; margin-bottom: 1em; color: #ccc; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5em; }
-  .canvas-container { position: relative; background: #000; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; }
-  .controls { display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap; margin-top: 0.5em; }
-  .button { background: #444; color: white; border: none; padding: 0.4em 0.8em; border-radius: 5px; cursor: pointer; }
-  .button:hover { background: #666; }
-  .icon { font-weight: bold; font-size: 1.2em; cursor: pointer; }
-  .add-section { font-size: 2em; text-align: center; cursor: pointer; color: #0f0; }
+  body {
+    font-family: sans-serif;
+    background: #111;
+    color: #eee;
+    margin: 2em;
+    position: relative;
+  }
+
+  .section {
+    border: 1px solid #444;
+    padding: 0;
+    margin-bottom: 2em;
+    border-radius: 10px;
+    background: #222;
+    overflow: hidden;
+  }
+
+  .section.collapsed .section-content {
+    display: none;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8em 1em;
+    cursor: pointer;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+  }
+
+  .title {
+    font-size: 1.3em;
+  }
+
+  .arrow {
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 10px solid white;
+    transition: transform 0.2s;
+  }
+
+  .collapsed .arrow {
+    transform: rotate(-90deg);
+  }
+
+  .description {
+    font-size: 1em;
+    color: #ccc;
+  }
+
+  .frame-count {
+    color: #aaa;
+    margin-bottom: 1em;
+    font-size: 0.9em;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5em;
+    justify-items: center;
+  }
+
+  .canvas-container {
+    position: relative;
+    background: #000;
+    aspect-ratio: 1/1;
+    width: 200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .angle-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .controls {
+    display: flex;
+    gap: 0.4em;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.5em;
+    justify-content: center;
+  }
+
+  .button {
+    background: #444;
+    color: white;
+    border: none;
+    padding: 0.3em 0.6em;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 0.9em;
+  }
+
+  .button:hover {
+    background: #666;
+  }
+
+  .icon {
+    font-weight: bold;
+    font-size: 1.2em;
+    cursor: pointer;
+  }
+
+  .add-section {
+    font-size: 2em;
+    text-align: center;
+    cursor: pointer;
+    color: #0f0;
+    margin-bottom: 3em;
+  }
+
+  .global-controls {
+    margin-top: 1em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1em;
+    justify-content: space-between;
+  }
+
+  .edit-panel {
+    background: #333;
+    padding: 1em;
+    margin-top: 1em;
+    border-radius: 8px;
+  }
+
+  .edit-panel input {
+    width: 100%;
+    margin-bottom: 0.5em;
+    padding: 0.3em;
+    border-radius: 4px;
+    border: 1px solid #555;
+    background: #222;
+    color: #eee;
+  }
+
+  input[type="number"] {
+    width: 60px;
+    text-align: right;
+  }
+
+  #saveHTML {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #0f0;
+    color: #000;
+    padding: 0.8em 1.2em;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    border: none;
+  }
+
+  #saveHTML:hover {
+    background: #4f4;
+  }
 </style>
 </head>
 <body>
@@ -26,18 +184,22 @@
 
 <div class="add-section" id="addSection">＋ Add Animation Section</div>
 
+<button id="saveHTML">💾 Save HTML</button>
+
 <script>
 class AnimationSection {
-  constructor(container, title = "", description = "", frameSources = {}) {
+  constructor(container, title = "", description = "", frameSources = {}, frameCount = 0) {
     this.container = container;
     this.title = title;
     this.description = description;
-    this.frameSources = frameSources; // {front:[], side:[], back:[], threeq:[]}
+    this.frameSources = frameSources;
+    this.frameCount = frameCount;
     this.currentFrame = 0;
     this.playing = {front:false, side:false, back:false, threeq:false};
-    this.framerate = 12;
+    this.framerate = 60;
     this.loop = true;
     this.intervalIDs = {};
+    this.collapsed = false;
     this.render();
   }
 
@@ -45,25 +207,43 @@ class AnimationSection {
     const section = document.createElement("div");
     section.className = "section";
 
-    if (this.title) {
-      const titleEl = document.createElement("div");
-      titleEl.className = "title";
-      titleEl.textContent = this.title;
-      section.appendChild(titleEl);
-    }
-    if (this.description) {
-      const descEl = document.createElement("div");
-      descEl.className = "description";
-      descEl.textContent = this.description;
-      section.appendChild(descEl);
-    }
+    const header = document.createElement("div");
+    header.className = "section-header";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "title";
+    titleEl.textContent = this.title || "Untitled Animation";
+
+    const arrow = document.createElement("div");
+    arrow.className = "arrow";
+
+    header.appendChild(titleEl);
+    header.appendChild(arrow);
+    section.appendChild(header);
+
+    const content = document.createElement("div");
+    content.className = "section-content";
+    section.appendChild(content);
+
+    const descEl = document.createElement("div");
+    descEl.className = "description";
+    if (this.description) descEl.textContent = this.description;
+    content.appendChild(descEl);
+
+    const frameInfo = document.createElement("div");
+    frameInfo.className = "frame-count";
+    frameInfo.textContent = `Frames: ${this.frameCount}`;
+    content.appendChild(frameInfo);
 
     const grid = document.createElement("div");
     grid.className = "grid";
-    section.appendChild(grid);
+    content.appendChild(grid);
 
     const angles = ["front", "side", "back", "threeq"];
     angles.forEach(angle => {
+      const block = document.createElement("div");
+      block.className = "angle-block";
+
       const div = document.createElement("div");
       div.className = "canvas-container";
 
@@ -71,8 +251,7 @@ class AnimationSection {
       img.style.maxWidth = "100%";
       img.style.maxHeight = "100%";
       div.appendChild(img);
-
-      grid.appendChild(div);
+      block.appendChild(div);
 
       const controls = document.createElement("div");
       controls.className = "controls";
@@ -82,29 +261,35 @@ class AnimationSection {
         <button class="button" id="prev_${angle}">◀ Frame</button>
         <button class="button" id="next_${angle}">Frame ▶</button>
       `;
-      section.appendChild(controls);
+      block.appendChild(controls);
+      grid.appendChild(block);
 
-      // Event listeners
       controls.querySelector(`#play_${angle}`).addEventListener("click", () => this.play(angle, img));
       controls.querySelector(`#pause_${angle}`).addEventListener("click", () => this.pause(angle));
       controls.querySelector(`#prev_${angle}`).addEventListener("click", () => this.frameChange(angle, -1, img));
       controls.querySelector(`#next_${angle}`).addEventListener("click", () => this.frameChange(angle, 1, img));
 
-      // Initialize image
       if (this.frameSources[angle] && this.frameSources[angle].length)
         img.src = this.frameSources[angle][0];
     });
 
-    // Global controls
     const global = document.createElement("div");
-    global.className = "controls";
+    global.className = "global-controls";
     global.innerHTML = `
-      <label>Framerate: <input type="number" id="framerate" value="${this.framerate}" min="1" style="width:60px"></label>
-      <label><input type="checkbox" id="loop" ${this.loop ? "checked" : ""}> Loop</label>
-      <button class="button" id="playAll">Play All</button>
-      <span class="icon" id="gear">⚙️</span>
+      <div>
+        <label>Framerate: 
+          <input type="number" id="framerate" value="${this.framerate}" min="1">
+        </label>
+        <label style="margin-left:1em;">
+          <input type="checkbox" id="loop" ${this.loop ? "checked" : ""}> Loop
+        </label>
+      </div>
+      <div>
+        <button class="button" id="playAll">Play All</button>
+        <span class="icon" id="gear">⚙️</span>
+      </div>
     `;
-    section.appendChild(global);
+    content.appendChild(global);
 
     global.querySelector("#framerate").addEventListener("change", e => {
       this.framerate = parseInt(e.target.value);
@@ -113,9 +298,80 @@ class AnimationSection {
       this.loop = e.target.checked;
     });
     global.querySelector("#playAll").addEventListener("click", () => this.playAll(section));
-    global.querySelector("#gear").addEventListener("click", () => alert("Edit mode coming soon!"));
+    global.querySelector("#gear").addEventListener("click", () => this.openEditPanel(content, frameInfo, titleEl, descEl, grid));
+
+    header.addEventListener("click", () => {
+      this.collapsed = !this.collapsed;
+      section.classList.toggle("collapsed", this.collapsed);
+    });
 
     this.container.appendChild(section);
+  }
+
+  openEditPanel(content, frameInfo, titleEl, descEl, grid) {
+    const existing = content.querySelector(".edit-panel");
+    if (existing) existing.remove();
+
+    const panel = document.createElement("div");
+    panel.className = "edit-panel";
+    panel.innerHTML = `
+      <label>Title:<br><input id="editTitle" value="${this.title}"></label>
+      <label>Description:<br><input id="editDesc" value="${this.description}"></label>
+      <label>Frame Count:<br><input type="number" id="editCount" value="${this.frameCount}" min="1"></label>
+      <label>Front Folder URL:<br><input id="editFront" value=""></label>
+      <label>Side Folder URL:<br><input id="editSide" value=""></label>
+      <label>Back Folder URL:<br><input id="editBack" value=""></label>
+      <label>3/4 Folder URL:<br><input id="editThreeq" value=""></label>
+      <button class="button" id="saveEdit">Save</button>
+    `;
+    content.appendChild(panel);
+
+    panel.querySelector("#saveEdit").addEventListener("click", () => {
+      this.title = panel.querySelector("#editTitle").value;
+      this.description = panel.querySelector("#editDesc").value;
+      this.frameCount = parseInt(panel.querySelector("#editCount").value);
+
+      const folders = {
+        front: panel.querySelector("#editFront").value,
+        side: panel.querySelector("#editSide").value,
+        back: panel.querySelector("#editBack").value,
+        threeq: panel.querySelector("#editThreeq").value
+      };
+
+      const makeFrames = (url) => {
+  const arr = [];
+  if (!url.endsWith("/")) url += "/";
+
+  // If user pasted a GitHub folder link, auto-convert to raw link
+  url = url.replace("https://github.com/", "https://raw.githubusercontent.com/")
+           .replace("/tree/", "/");
+
+  for (let i = 1; i <= this.frameCount; i++) {
+    const frameNumber = i.toString().padStart(4, "0");
+    arr.push(`${url}frame_${frameNumber}.webp`);
+  }
+  return arr;
+};
+
+      this.frameSources = {
+        front: folders.front ? makeFrames(folders.front) : [],
+        side: folders.side ? makeFrames(folders.side) : [],
+        back: folders.back ? makeFrames(folders.back) : [],
+        threeq: folders.threeq ? makeFrames(folders.threeq) : []
+      };
+
+      titleEl.textContent = this.title || "Untitled Animation";
+      descEl.textContent = this.description || "";
+      frameInfo.textContent = `Frames: ${this.frameCount}`;
+
+      // Refresh image previews
+      const imgs = grid.querySelectorAll("img");
+      ["front","side","back","threeq"].forEach((angle,i)=>{
+        if (this.frameSources[angle].length) imgs[i].src = this.frameSources[angle][0];
+      });
+
+      panel.remove();
+    });
   }
 
   play(angle, img) {
@@ -151,29 +407,41 @@ class AnimationSection {
     this.currentFrame = 0;
     ["front", "side", "back", "threeq"].forEach((angle, i) => this.play(angle, imgs[i]));
   }
+
+  toJSON() {
+    return {
+      title: this.title,
+      description: this.description,
+      frameCount: this.frameCount,
+      frameSources: this.frameSources
+    };
+  }
 }
 
 const container = document.getElementById("sections");
-const addButton = document.getElementById("addSection");
+const sections = [];
 
-addButton.addEventListener("click", () => {
-  new AnimationSection(container, "New Animation", "Description", {
-    front: [],
-    side: [],
-    back: [],
-    threeq: []
-  });
+document.getElementById("addSection").addEventListener("click", () => {
+  const newSection = new AnimationSection(container, "New Animation", "Description", {}, 1);
+  sections.push(newSection);
 });
 
-// Example section
-new AnimationSection(container, "Idle Animation", "Example description", {
-  front: [
-    "https://raw.githubusercontent.com/SeanGitUser/CharacterFrames/main/idle/front/frame_0001.png",
-    "https://raw.githubusercontent.com/SeanGitUser/CharacterFrames/main/idle/front/frame_0002.png"
-  ],
-  side: [],
-  back: [],
-  threeq: []
+// Example
+sections.push(new AnimationSection(container, "Idle Animation", "Example description", {
+  front: ["https://raw.githubusercontent.com/SeanGitUser/CharacterFrames/main/idle/front/frame_0001.png"]
+}, 1));
+
+// Save HTML
+document.getElementById("saveHTML").addEventListener("click", () => {
+  const data = sections.map(s => s.toJSON());
+  const htmlContent = document.documentElement.outerHTML
+    .replace(/const sections = \[[\s\S]*?\];/, `const sectionsData = ${JSON.stringify(data, null, 2)};`);
+
+  const blob = new Blob([htmlContent], { type: "text/html" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "animation_viewer.html";
+  a.click();
 });
 </script>
 </body>
